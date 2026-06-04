@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SpriteSheet Maker</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <aside class="panel controls">
+        <header class="app-header">
+          <h1>SpriteSheet Maker</h1>
+          <button id="languageToggle" class="ghost-button" type="button">EN</button>
+        </header>
+
+        <section class="compact">
+          <h2 id="inputTitle">输入</h2>
+          <label class="file-drop">
+            <input id="fileInput" type="file" accept=".mp4,.mov,.gif,.webm,.avi,.png,.jpg,.jpeg" />
+            <span id="fileText">选择视频、GIF 或图片</span>
+          </label>
+        </section>
+
+        <section class="grid three">
+          <h2 id="frameRangeTitle">帧范围</h2>
+          <label><span id="fpsPresetLabel">帧率预设</span><select id="fpsPreset"><option value="" id="fpsOriginalOption">原始</option><option value="8">8 FPS</option><option value="12">12 FPS</option><option value="24">24 FPS</option><option value="30">30 FPS</option><option value="custom" id="fpsCustomOption">自定义</option></select></label>
+          <label><span id="customFpsLabel">自定义 FPS</span><input id="fps" type="number" min="1" placeholder="仅自定义" /></label>
+          <label><span id="startFrameLabel">起始帧</span><input id="startFrame" type="number" min="0" placeholder="0" /></label>
+          <label><span id="endFrameLabel">结束帧</span><input id="endFrame" type="number" min="0" placeholder="全部" /></label>
+        </section>
+
+        <section class="compact collapsed" id="transparencySection">
+          <div class="section-title-row">
+            <h2 id="transparencyTitle">透明处理</h2>
+            <button id="transparencyToggle" class="icon-button" type="button">▸</button>
+          </div>
+          <div class="collapsible-content">
+            <label class="switch"><input id="removeBlack" type="checkbox" checked /> <span id="removeBlackLabel">移除黑底</span></label>
+            <label class="slider-row"><span id="blackThresholdLabel">黑色阈值</span> <output id="blackThresholdOut">20</output><input id="blackThreshold" type="range" min="0" max="100" value="20" /></label>
+            <label class="slider-row"><span id="softEdgeLabel">柔边</span> <output id="softEdgeOut">8</output><input id="softEdge" type="range" min="0" max="48" value="8" /></label>
+            <label><span id="alphaStrengthLabel">Alpha 强度</span><input id="alphaStrength" type="number" min="0" max="4" step="0.1" value="1.0" /></label>
+          </div>
+        </section>
+
+        <section class="grid two">
+          <h2 id="frameCanvasTitle">单帧画布</h2>
+          <label class="switch"><input id="autoSize" type="checkbox" checked /> <span id="autoSizeLabel">自动尺寸</span></label>
+          <label><span id="anchorLabel">锚点</span><select id="anchor"><option value="center" id="anchorCenterOption">居中</option><option value="top" id="anchorTopOption">顶部</option><option value="bottom" id="anchorBottomOption">底部</option></select></label>
+          <label><span id="widthLabel">宽度</span><input id="frameWidth" type="number" min="1" value="256" /></label>
+          <label><span id="heightLabel">高度</span><input id="frameHeight" type="number" min="1" value="256" /></label>
+        </section>
+
+        <section class="grid two">
+          <h2 id="spriteSheetTitle">宫格图</h2>
+          <label class="span"><span id="layoutModeLabel">布局模式</span><select id="layoutMode"><option value="fpsAuto" id="fpsAutoOption">帧率自动布局</option><option value="customGrid" id="customGridOption">自定义行列</option></select></label>
+          <label><span id="columnsLabel">列数</span><input id="columns" type="number" min="1" placeholder="自动" /></label>
+          <label><span id="rowsLabel">行数</span><input id="rows" type="number" min="1" placeholder="自动" /></label>
+          <label><span id="paddingLabel">间距</span><input id="padding" type="number" min="0" value="0" /></label>
+          <label><span id="maxTextureLabel">最大贴图</span><input id="maxTextureSize" type="number" min="64" value="4096" /></label>
+          <div class="option-row span">
+            <label class="switch"><input id="gridPriority" type="checkbox" /> <span id="gridPriorityLabel">填满自定义行列</span></label>
+            <label class="switch"><input id="tightGrid" type="checkbox" /> <span id="tightGridLabel">无留白</span></label>
+          </div>
+          <label><span id="outputPngLabel">输出 PNG</span><input id="outputName" type="text" value="sprite_sheet.png" /></label>
+          <label class="span"><span id="saveFolderLabel">保存目录</span>
+            <span class="path-row">
+              <input id="outputDir" type="text" />
+              <button id="chooseOutputDirBtn" type="button">选择</button>
+            </span>
+          </label>
+          <label class="switch span"><input id="exportFrames" type="checkbox" /> <span id="exportFramesLabel">导出单帧文件夹</span></label>
+        </section>
+
+        <footer class="actions">
+          <button id="previewBtn" type="button">预览</button>
+          <button id="exportBtn" type="button" class="primary">导出</button>
+        </footer>
+      </aside>
+
+      <section class="panel preview">
+        <div class="preview-top">
+          <div>
+            <p class="eyebrow">Transparent PNG Output</p>
+            <h2 id="previewTitle">预览</h2>
+          </div>
+          <select id="background">
+            <option value="checker" id="bgCheckerOption">棋盘格</option>
+            <option value="black" id="bgBlackOption">黑底</option>
+            <option value="white" id="bgWhiteOption">白底</option>
+            <option value="gray" id="bgGrayOption">灰底</option>
+            <option value="transparent" id="bgTransparentOption">透明</option>
+          </select>
+        </div>
+        <div class="canvas-wrap">
+          <img id="previewImage" alt="" />
+          <div id="emptyState">上传素材后点击预览或导出。</div>
+        </div>
+        <div class="status-row">
+          <div class="progress-wrap">
+            <progress id="progressBar" max="100" value="0"></progress>
+            <span id="progressText">0%</span>
+          </div>
+          <div class="status-copy">
+            <span id="status">就绪。</span>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script src="/static/app.js?v=20260604-spritesheet-maker"></script>
+  </body>
+</html>

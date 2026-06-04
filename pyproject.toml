@@ -1,0 +1,21 @@
+[project]
+name = "spritesheet-maker"
+version = "0.1.0"
+description = "Local desktop tool for building transparent sprite sheets from GIF/video sources."
+requires-python = ">=3.9"
+dependencies = [
+  "Pillow>=11.0.0",
+  "imageio-ffmpeg>=0.6.0"
+]
+
+[project.scripts]
+spritesheet-maker = "unity_vx_motion_master.cli:main"
+spritesheet-maker-gui = "unity_vx_motion_master.gui:main"
+spritesheet-maker-web = "unity_vx_motion_master.web_app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

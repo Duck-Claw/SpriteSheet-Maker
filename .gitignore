@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+venv/
+build/
+dist/
+*.spec
+
+assets/temp/*
+assets/output/*
+assets/previews/*
+
+!assets/temp/.gitkeep
+!assets/output/.gitkeep
+!assets/previews/.gitkeep

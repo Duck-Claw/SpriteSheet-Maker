@@ -1,0 +1,5 @@
+Pillow>=11.0.0
+imageio-ffmpeg>=0.6.0
+
+# imageio-ffmpeg bundles an ffmpeg binary for video input.
+# A system ffmpeg on PATH also works.
