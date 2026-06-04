@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import cgi
 import io
 import json
 import mimetypes
@@ -91,14 +90,23 @@ class MotionMasterHandler(BaseHTTPRequestHandler):
 
     def _handle_upload(self) -> None:
         INPUT_DIR.mkdir(parents=True, exist_ok=True)
-        form = cgi.FieldStorage(fp=self.rfile, headers=self.headers, environ={"REQUEST_METHOD": "POST"})
-        file_item = form["file"] if "file" in form else None
-        if file_item is None or not file_item.filename:
+        filename, data = self._read_multipart_file("file")
+        if not filename:
             raise WebAppError("No file uploaded.")
-        filename = _safe_filename(file_item.filename)
+        filename = _safe_filename(filename)
         target = INPUT_DIR / filename
-        target.write_bytes(file_item.file.read())
+        target.write_bytes(data)
         self._send_json({"path": str(target), "filename": filename})
+
+    def _read_multipart_file(self, field_name: str) -> tuple[str, bytes]:
+        content_type = self.headers.get("Content-Type", "")
+        boundary = _multipart_boundary(content_type)
+        if not boundary:
+            raise WebAppError("Upload request is missing a multipart boundary.")
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            raise WebAppError("Upload request is empty.")
+        return _extract_multipart_file(self.rfile.read(length), boundary, field_name)
 
     def _handle_choose_output_dir(self) -> None:
         if platform.system() != "Darwin":
@@ -491,6 +499,63 @@ def _resolve_layout_columns(payload: dict, frames: list[Image.Image]) -> Optiona
 def _safe_filename(name: str) -> str:
     cleaned = "".join(char for char in Path(name).name if char.isalnum() or char in "._- ")
     return cleaned.strip() or f"upload_{int(time.time())}.dat"
+
+
+def _multipart_boundary(content_type: str) -> str:
+    media_type, *params = content_type.split(";")
+    if media_type.strip().lower() != "multipart/form-data":
+        return ""
+    for param in params:
+        key, separator, value = param.strip().partition("=")
+        if separator and key.lower() == "boundary":
+            return value.strip().strip('"')
+    return ""
+
+
+def _extract_multipart_file(body: bytes, boundary: str, field_name: str) -> tuple[str, bytes]:
+    delimiter = f"--{boundary}".encode("utf-8")
+    for part in body.split(delimiter):
+        if not part or part in (b"--", b"--\r\n"):
+            continue
+        if part.startswith(b"\r\n"):
+            part = part[2:]
+        if part.endswith(b"--"):
+            part = part[:-2]
+        if part.endswith(b"\r\n"):
+            part = part[:-2]
+
+        header_blob, separator, data = part.partition(b"\r\n\r\n")
+        if not separator:
+            continue
+        headers = _parse_multipart_headers(header_blob)
+        disposition = headers.get("content-disposition", "")
+        disposition_type, params = _parse_header_value(disposition)
+        if disposition_type != "form-data":
+            continue
+        if params.get("name") == field_name and params.get("filename"):
+            return params["filename"], data
+    raise WebAppError("No file uploaded.")
+
+
+def _parse_multipart_headers(header_blob: bytes) -> dict[str, str]:
+    headers = {}
+    for raw_line in header_blob.decode("iso-8859-1").split("\r\n"):
+        key, separator, value = raw_line.partition(":")
+        if separator:
+            headers[key.strip().lower()] = value.strip()
+    return headers
+
+
+def _parse_header_value(value: str) -> tuple[str, dict[str, str]]:
+    parts = [part.strip() for part in value.split(";") if part.strip()]
+    if not parts:
+        return "", {}
+    params = {}
+    for part in parts[1:]:
+        key, separator, raw_value = part.partition("=")
+        if separator:
+            params[key.strip().lower()] = raw_value.strip().strip('"')
+    return parts[0].lower(), params
 
 
 def _image_to_data_url(image: Image.Image) -> str:
