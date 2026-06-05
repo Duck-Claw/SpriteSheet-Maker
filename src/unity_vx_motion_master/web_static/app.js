@@ -35,7 +35,7 @@ const translations = {
     customGridOption: "自定义行列",
     columnsLabel: "列数",
     rowsLabel: "行数",
-    paddingLabel: "间距",
+    paddingLabel: "单帧四周留白",
     maxTextureLabel: "最大贴图",
     gridPriorityLabel: "填满自定义行列",
     tightGridLabel: "无留白",
@@ -63,6 +63,8 @@ const translations = {
     saveFolder: "保存目录",
     exported: "已导出",
     previewStatus: "预览",
+    sheetSizeLabel: "图片",
+    frameCanvasSizeLabel: "单帧",
     actualFpsLabel: "实际 FPS",
     previewImageMissing: "没有返回预览图。",
     previewImageFailed: "预览图加载失败。",
@@ -100,10 +102,10 @@ const translations = {
     customGridOption: "Custom Rows / Columns",
     columnsLabel: "Columns",
     rowsLabel: "Rows",
-    paddingLabel: "Padding",
+    paddingLabel: "Frame Margin",
     maxTextureLabel: "Max Texture",
     gridPriorityLabel: "Fill custom grid",
-    tightGridLabel: "No padding",
+    tightGridLabel: "No margin",
     outputPngLabel: "Output PNG",
     saveFolderLabel: "Save Folder",
     chooseOutputDirBtn: "Choose",
@@ -128,6 +130,8 @@ const translations = {
     saveFolder: "Save folder",
     exported: "Exported",
     previewStatus: "Preview",
+    sheetSizeLabel: "Image",
+    frameCanvasSizeLabel: "Frame",
     actualFpsLabel: "Actual FPS",
     previewImageMissing: "Preview image was not returned.",
     previewImageFailed: "Preview image failed to load.",
@@ -306,11 +310,7 @@ async function runJob(url, label) {
     if (result.outputPath) {
       setStatus(`${t("exported")}: ${result.outputPath}`);
     } else {
-      const fpsText = formatFps(result.effectiveFps);
-      const fpsSuffix = fpsText ? `, ${t("actualFpsLabel")} ${fpsText}` : "";
-      setStatus(
-        `${t("previewStatus")}: ${result.frameCount} frames, ${result.frameWidth}x${result.frameHeight}, ${result.columns}x${result.rows}${fpsSuffix}`
-      );
+      setStatus(formatPreviewStatus(result));
     }
   } catch (error) {
     setStatus(error.message);
@@ -377,6 +377,29 @@ function formatFps(value) {
   const fps = Number(value);
   if (!Number.isFinite(fps) || fps <= 0) return "";
   return `${fps.toFixed(fps >= 10 ? 1 : 2).replace(/\.?0+$/, "")} FPS`;
+}
+
+function formatPreviewStatus(result) {
+  const parts = [
+    `${result.frameCount} frames`,
+    `${t("sheetSizeLabel")} ${formatSize(result.sheetWidth, result.sheetHeight)}`,
+    `${t("frameCanvasSizeLabel")} ${formatSize(result.frameWidth, result.frameHeight)}`,
+    `${result.columns}x${result.rows}`,
+  ];
+  const fpsText = formatFps(result.effectiveFps);
+  if (fpsText) {
+    parts.push(`${t("actualFpsLabel")} ${fpsText}`);
+  }
+  return `${t("previewStatus")}: ${parts.join(", ")}`;
+}
+
+function formatSize(width, height) {
+  const numericWidth = Number(width);
+  const numericHeight = Number(height);
+  if (!Number.isFinite(numericWidth) || !Number.isFinite(numericHeight)) {
+    return "-";
+  }
+  return `${numericWidth}x${numericHeight}`;
 }
 
 function showImage(src) {

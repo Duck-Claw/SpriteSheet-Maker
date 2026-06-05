@@ -12,15 +12,15 @@ The core rule is animation-safe cropping: every frame is analyzed, all alpha bou
 - Unified crop: one maximum alpha bounding box across all frames
 - Unified frame canvas: auto size or custom width/height
 - Anchor: center, top, bottom
-- Sprite sheet: auto/custom columns, padding, max texture size scaling
+- Sprite sheet: auto/custom columns, per-frame transparent margin, max texture size scaling
 - Output: transparent PNG, optional individual frames, optional metadata JSON
 - Local Web UI: parameter panel, upload, preview composited over checker/black/white/gray backgrounds
 - Async progress: Preview and Export show a live progress bar with stage messages
 - Output folder: choose a macOS save folder or type a relative/absolute folder path
 - Layout modes:
   - FPS Auto Grid: choose Original, 8, 12, 24, 30, or Custom FPS; columns are auto-fit from frame width and Max Texture when Columns is empty
-  - Custom Rows / Columns: set exact rows and columns; `Fill custom grid` samples exactly `rows * columns` frames and fits cells from rows, columns, padding, and Max Texture
-- Tight grid: `No padding` uses the unified maximum subject bounding box as each frame cell, forces effective padding to 0, and only scales down if the final sheet exceeds Max Texture
+  - Custom Rows / Columns: set exact rows and columns; `Fill custom grid` samples exactly `rows * columns` frames and fits cells from rows, columns, per-frame margin, and Max Texture
+- Tight grid: `No margin` uses the unified maximum subject bounding box as each frame cell, forces the per-frame margin to 0, and only scales down if the final sheet exceeds Max Texture
 - Even dimensions: each frame canvas and the final sprite sheet are forced to even width/height by adding transparent pixels when needed
 - UI language: Chinese by default, with a top-left toggle for English
 - Tkinter GUI: kept as an optional fallback, but not used by the macOS launcher
@@ -57,6 +57,8 @@ PYTHONPATH=src python3 run_cli.py examples/sample_vfx.gif \
   --columns 4 \
   --padding 2
 ```
+
+`--padding` is kept for CLI compatibility, but it means transparent margin around each frame canvas. For example, `--padding 20` adds 20 px of transparent space on all four sides of every frame, affects exported individual frames, and does not insert gaps between cells in the final sheet.
 
 Video input uses `imageio-ffmpeg`, which bundles ffmpeg for most machines. If video decoding still fails, install system ffmpeg:
 

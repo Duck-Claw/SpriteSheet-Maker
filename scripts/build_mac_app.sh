@@ -7,6 +7,7 @@ python3 -m PyInstaller \
   --name "SpriteSheet Maker" \
   --windowed \
   --clean \
+  --noconfirm \
   --paths "src" \
   --add-data "assets:assets" \
   --add-data "src/unity_vx_motion_master/web_static:src/unity_vx_motion_master/web_static" \

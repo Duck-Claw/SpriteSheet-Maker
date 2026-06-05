@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--frame-height", type=int, default=None)
     parser.add_argument("--anchor", choices=("center", "top", "bottom"), default="center")
     parser.add_argument("--columns", type=int, default=None)
-    parser.add_argument("--padding", type=int, default=0)
+    parser.add_argument("--padding", type=int, default=0, help="Transparent margin, in pixels, added around each frame canvas.")
     parser.add_argument("--max-texture-size", type=int, default=4096)
     parser.add_argument("--export-frames", action="store_true")
     return parser

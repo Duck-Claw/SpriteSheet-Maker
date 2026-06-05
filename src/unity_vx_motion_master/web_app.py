@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import errno
 import io
 import json
 import mimetypes
@@ -20,6 +21,7 @@ from PIL import Image
 from .config import ProcessSettings, SheetMetadata
 from .frame_source import estimate_source_duration_seconds, load_frames, select_frame_range
 from .processor import (
+    add_canvas_margin,
     compose_sheet,
     ensure_even_canvas,
     even_size,
@@ -253,7 +255,7 @@ def _build_sheet_result(job_id: str, kind: str, payload: dict, settings: Process
     grid_columns = _int_or_none(payload.get("columns"))
     target_grid_count = grid_rows * grid_columns if (grid_priority or tight_grid) and grid_rows and grid_columns else None
     decode_fps = None if target_grid_count else settings.fps
-    effective_padding = 0 if tight_grid else settings.padding
+    frame_margin = 0 if tight_grid else settings.padding
 
     _set_job(job_id, {"progress": 5, "message": "Decoding source frames..."})
     source_duration = estimate_source_duration_seconds(settings.input_path)
@@ -293,7 +295,7 @@ def _build_sheet_result(job_id: str, kind: str, payload: dict, settings: Process
 
     normalized = []
     for index, frame in enumerate(processed):
-        normalized.append(place_on_canvas(frame.crop(crop_box), canvas_size, settings.anchor))
+        normalized.append(add_canvas_margin(place_on_canvas(frame.crop(crop_box), canvas_size, settings.anchor), frame_margin))
         progress = 64 + int(((index + 1) / total) * 16)
         _set_job(job_id, {"progress": progress, "message": f"Normalizing frame canvas {index + 1}/{total}..."})
 
@@ -302,17 +304,17 @@ def _build_sheet_result(job_id: str, kind: str, payload: dict, settings: Process
     _set_job(job_id, {"progress": 88, "message": "Composing sprite sheet..."})
     sheet_columns = _resolve_layout_columns(payload, normalized)
     sheet_rows = grid_rows if layout_mode == "customGrid" and grid_rows and grid_columns else None
-    sheet, columns, rows = compose_sheet(normalized, sheet_columns, sheet_rows, effective_padding)
-    if kind == "export" and settings.max_texture_size and (sheet.width > settings.max_texture_size or sheet.height > settings.max_texture_size):
+    sheet, columns, rows = compose_sheet(normalized, sheet_columns, sheet_rows)
+    if settings.max_texture_size and (sheet.width > settings.max_texture_size or sheet.height > settings.max_texture_size):
         _set_job(job_id, {"progress": 91, "message": "Scaling to max texture size..."})
-        target_cell = _fit_even_cell_size(settings.max_texture_size, columns, rows, effective_padding)
+        target_cell = _fit_even_cell_size(settings.max_texture_size, columns, rows)
         scale = min(target_cell[0] / normalized[0].width, target_cell[1] / normalized[0].height)
         scale = max(0.01, min(1.0, scale))
         normalized = [
             ensure_even_canvas(frame.resize((max(1, int(frame.width * scale)), max(1, int(frame.height * scale))), Image.Resampling.LANCZOS))
             for frame in normalized
         ]
-        sheet, columns, rows = compose_sheet(normalized, sheet_columns, sheet_rows, effective_padding)
+        sheet, columns, rows = compose_sheet(normalized, sheet_columns, sheet_rows)
 
     output_path = None
     metadata = None
@@ -331,7 +333,7 @@ def _build_sheet_result(job_id: str, kind: str, payload: dict, settings: Process
             frame_height=normalized[0].height,
             columns=columns,
             rows=rows,
-            padding=effective_padding,
+            padding=frame_margin,
             sheet_width=sheet.width,
             sheet_height=sheet.height,
             source_width=source_width,
@@ -351,6 +353,8 @@ def _build_sheet_result(job_id: str, kind: str, payload: dict, settings: Process
         "frameCount": len(normalized),
         "frameWidth": normalized[0].width,
         "frameHeight": normalized[0].height,
+        "sheetWidth": sheet.width,
+        "sheetHeight": sheet.height,
         "columns": columns,
         "rows": rows,
         "effectiveFps": effective_fps,
@@ -437,30 +441,29 @@ def _resolve_canvas_size_for_job(crop_box: tuple[int, int, int, int], settings: 
     ):
         rows = _int(payload.get("rows"), 1)
         columns = _int(payload.get("columns"), 1)
-        padding = _int(payload.get("padding"), 0)
-        return _fit_even_cell_size(settings.max_texture_size, columns, rows, padding)
+        frame_margin = 0 if bool(payload.get("tightGrid", False)) else _int(payload.get("padding"), 0)
+        total_cell = _fit_even_cell_size(settings.max_texture_size, columns, rows)
+        return even_size((max(2, total_cell[0] - frame_margin * 2), max(2, total_cell[1] - frame_margin * 2)))
     return resolve_canvas_size(crop_box, settings)
 
 
-def _fit_even_cell_size(max_texture: int, columns: int, rows: int, padding: int) -> tuple[int, int]:
-    gap_width = max(0, columns - 1) * padding
-    gap_height = max(0, rows - 1) * padding
-    available_width = max_texture - gap_width
-    available_height = max_texture - gap_height
+def _fit_even_cell_size(max_texture: int, columns: int, rows: int) -> tuple[int, int]:
+    available_width = max_texture
+    available_height = max_texture
     if available_width < columns or available_height < rows:
-        raise WebAppError("Rows, columns, and padding do not fit inside Max Texture.")
+        raise WebAppError("Rows and columns do not fit inside Max Texture.")
 
     cell_width = _even_floor(available_width // columns)
     cell_height = _even_floor(available_height // rows)
     if cell_width < 2 or cell_height < 2:
         raise WebAppError("Rows/columns priority produced a cell smaller than 2px.")
 
-    while _even_sheet_extent(columns, cell_width, padding) > max_texture and cell_width > 2:
+    while _even_sheet_extent(columns, cell_width) > max_texture and cell_width > 2:
         cell_width -= 2
-    while _even_sheet_extent(rows, cell_height, padding) > max_texture and cell_height > 2:
+    while _even_sheet_extent(rows, cell_height) > max_texture and cell_height > 2:
         cell_height -= 2
 
-    if _even_sheet_extent(columns, cell_width, padding) > max_texture or _even_sheet_extent(rows, cell_height, padding) > max_texture:
+    if _even_sheet_extent(columns, cell_width) > max_texture or _even_sheet_extent(rows, cell_height) > max_texture:
         raise WebAppError("Could not fit an even cell size inside Max Texture.")
     return even_size((cell_width, cell_height))
 
@@ -470,8 +473,8 @@ def _even_floor(value: int) -> int:
     return value if value % 2 == 0 else value - 1
 
 
-def _even_sheet_extent(count: int, cell_size: int, padding: int) -> int:
-    extent = count * cell_size + max(0, count - 1) * padding
+def _even_sheet_extent(count: int, cell_size: int) -> int:
+    extent = count * cell_size
     return extent + (extent % 2)
 
 
@@ -487,12 +490,11 @@ def _resolve_layout_columns(payload: dict, frames: list[Image.Image]) -> Optiona
         return None
 
     max_texture = _int_or_none(payload.get("maxTextureSize")) or 4096
-    padding = _int(payload.get("padding"), 0)
     frame_width = frames[0].width
-    cell_width = frame_width + padding
+    cell_width = frame_width
     if cell_width <= 0:
         return None
-    texture_fit_columns = max(1, (max_texture + padding) // cell_width)
+    texture_fit_columns = max(1, max_texture // cell_width)
     return min(len(frames), texture_fit_columns)
 
 
@@ -539,7 +541,11 @@ def _extract_multipart_file(body: bytes, boundary: str, field_name: str) -> tupl
 
 def _parse_multipart_headers(header_blob: bytes) -> dict[str, str]:
     headers = {}
-    for raw_line in header_blob.decode("iso-8859-1").split("\r\n"):
+    try:
+        header_text = header_blob.decode("utf-8")
+    except UnicodeDecodeError:
+        header_text = header_blob.decode("iso-8859-1")
+    for raw_line in header_text.split("\r\n"):
         key, separator, value = raw_line.partition(":")
         if separator:
             headers[key.strip().lower()] = value.strip()
@@ -592,13 +598,25 @@ def _float(value: object, default: float) -> float:
 def main(port: int = 8765, open_browser: bool = True) -> None:
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    server = ThreadingHTTPServer(("127.0.0.1", port), MotionMasterHandler)
-    url = f"http://127.0.0.1:{port}"
+    server, actual_port = _create_server(port)
+    url = f"http://127.0.0.1:{actual_port}"
     print(f"{APP_NAME} running at {url}")
     print("Keep this terminal open while using the tool.")
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     server.serve_forever()
+
+
+def _create_server(port: int) -> tuple[ThreadingHTTPServer, int]:
+    last_error: OSError | None = None
+    for candidate in range(port, port + 20):
+        try:
+            return ThreadingHTTPServer(("127.0.0.1", candidate), MotionMasterHandler), candidate
+        except OSError as exc:
+            last_error = exc
+            if exc.errno not in (errno.EADDRINUSE, 48, 98, 10048):
+                raise
+    raise WebAppError(f"Could not start local server near port {port}: {last_error}")
 
 
 if __name__ == "__main__":

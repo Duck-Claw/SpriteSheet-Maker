@@ -11,6 +11,7 @@ from PIL import Image, ImageTk
 from .config import ProcessSettings
 from .frame_source import load_frames, select_frame_range
 from .processor import (
+    add_canvas_margin,
     compose_sheet,
     find_union_alpha_bbox,
     place_on_canvas,
@@ -135,7 +136,7 @@ class MotionMasterApp(Tk):
 
         row = self._section(parent, row, "Sprite Sheet")
         row = self._field(parent, row, "Columns", self.columns, "Auto")
-        row = self._slider(parent, row, "Padding", self.padding, 0, 16)
+        row = self._slider(parent, row, "Frame Margin", self.padding, 0, 64)
         row = self._field(parent, row, "Max Texture", self.max_texture_size, "4096")
         ttk.Checkbutton(parent, text="Export Individual Frames", variable=self.export_frames).grid(row=row, column=0, columnspan=2, sticky="w", pady=3)
         row += 1
@@ -216,8 +217,8 @@ class MotionMasterApp(Tk):
             ]
             crop_box = find_union_alpha_bbox(processed)
             canvas_size = resolve_canvas_size(crop_box, settings)
-            normalized = [place_on_canvas(frame.crop(crop_box), canvas_size, settings.anchor) for frame in processed]
-            sheet, _, _ = compose_sheet(normalized, settings.columns, padding=settings.padding)
+            normalized = [add_canvas_margin(place_on_canvas(frame.crop(crop_box), canvas_size, settings.anchor), settings.padding) for frame in processed]
+            sheet, _, _ = compose_sheet(normalized, settings.columns)
             preview = preview_composite(sheet, self.background.get())
             preview.thumbnail((760, 560), Image.Resampling.LANCZOS)
             self.preview_queue.put(("preview", preview))

@@ -34,9 +34,9 @@ def process_to_sheet(settings: ProcessSettings) -> SheetMetadata:
     crop_box = find_union_alpha_bbox(processed)
     cropped = [frame.crop(crop_box) for frame in processed]
     canvas_size = resolve_canvas_size(crop_box, settings)
-    normalized = [place_on_canvas(frame, canvas_size, settings.anchor) for frame in cropped]
+    normalized = [add_canvas_margin(place_on_canvas(frame, canvas_size, settings.anchor), settings.padding) for frame in cropped]
     normalized, scale = fit_frames_to_texture(normalized, settings)
-    sheet, columns, rows = compose_sheet(normalized, settings.columns, padding=settings.padding)
+    sheet, columns, rows = compose_sheet(normalized, settings.columns)
 
     settings.output_path.parent.mkdir(parents=True, exist_ok=True)
     sheet.save(settings.output_path)
@@ -156,6 +156,16 @@ def ensure_even_canvas(image: Image.Image) -> Image.Image:
     return canvas
 
 
+def add_canvas_margin(image: Image.Image, margin: int = 0) -> Image.Image:
+    margin = max(0, int(margin))
+    if margin <= 0:
+        return ensure_even_canvas(image)
+    image = image.convert("RGBA")
+    canvas = Image.new("RGBA", (image.width + margin * 2, image.height + margin * 2), (0, 0, 0, 0))
+    canvas.alpha_composite(image, (margin, margin))
+    return ensure_even_canvas(canvas)
+
+
 def fit_frames_to_texture(frames: list[Image.Image], settings: ProcessSettings) -> tuple[list[Image.Image], float]:
     if not frames or not settings.max_texture_size:
         return frames, 1.0
@@ -164,7 +174,6 @@ def fit_frames_to_texture(frames: list[Image.Image], settings: ProcessSettings) 
         frames[0].width,
         frames[0].height,
         settings.columns,
-        settings.padding,
     )
     max_size = settings.max_texture_size
     if sheet_width <= max_size and sheet_height <= max_size:
@@ -183,24 +192,22 @@ def compose_sheet(
     frames: list[Image.Image],
     columns: Optional[int] = None,
     rows: Optional[int] = None,
-    padding: int = 0,
 ) -> tuple[Image.Image, int, int]:
     if not frames:
         raise ProcessingError("No frames to compose.")
     frame_width, frame_height = frames[0].size
-    padding = max(0, int(padding))
     columns = resolve_columns(len(frames), columns)
     rows = max(1, int(rows)) if rows and rows > 0 else math.ceil(len(frames) / columns)
-    sheet_width = columns * frame_width + max(0, columns - 1) * padding
-    sheet_height = rows * frame_height + max(0, rows - 1) * padding
+    sheet_width = columns * frame_width
+    sheet_height = rows * frame_height
     sheet = Image.new("RGBA", (sheet_width, sheet_height), (0, 0, 0, 0))
     for index, frame in enumerate(frames):
         if index >= columns * rows:
             break
         col = index % columns
         row = index // columns
-        x = col * (frame_width + padding)
-        y = row * (frame_height + padding)
+        x = col * frame_width
+        y = row * frame_height
         sheet.alpha_composite(frame, (x, y))
     return ensure_even_canvas(sheet), columns, rows
 
@@ -216,12 +223,11 @@ def estimate_sheet_size(
     frame_width: int,
     frame_height: int,
     columns: Optional[int],
-    padding: int,
 ) -> tuple[int, int, int, int]:
     cols = resolve_columns(frame_count, columns)
     rows = math.ceil(frame_count / cols)
-    width = cols * frame_width + max(0, cols - 1) * padding
-    height = rows * frame_height + max(0, rows - 1) * padding
+    width = cols * frame_width
+    height = rows * frame_height
     return width, height, cols, rows
 
 
