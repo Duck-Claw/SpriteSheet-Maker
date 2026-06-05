@@ -73,27 +73,118 @@ def remove_black_background(
     soft_edge: int = 8,
     alpha_strength: float = 1.0,
 ) -> Image.Image:
-    image = image.convert("RGBA")
+    """Convert black-background VFX into straight-alpha RGBA.
+
+    This follows the UnMult idea used for premultiplied-on-black VFX:
+    alpha is estimated from the brightest RGB channel, then RGB is divided by
+    that alpha to recover the original color. Very dark pixels connected to the
+    image edge are treated as black background, while enclosed dark pixels are
+    restored so black details inside the effect are not punched out.
+    """
+    source = image.convert("RGBA")
+    image = source.copy()
     pixels = image.load()
+    source_pixels = source.load()
     width, height = image.size
     threshold = max(0, min(255, int(black_threshold)))
     feather = max(0, int(soft_edge))
     alpha_strength = max(0.0, min(4.0, float(alpha_strength)))
-    fade_end = min(255, threshold + feather)
+    alpha_values = bytearray(width * height)
+    bright_alpha_values = bytearray(width * height)
+    dark_color_candidates = bytearray(width * height)
+    chroma_floor = 18
 
     for y in range(height):
         for x in range(width):
             r, g, b, a = pixels[x, y]
             brightness = max(r, g, b)
-            if brightness <= threshold:
-                next_alpha = 0
-            elif feather > 0 and brightness < fade_end:
-                t = (brightness - threshold) / max(1, feather)
-                next_alpha = int(a * max(0.0, min(1.0, t * alpha_strength)))
-            else:
-                next_alpha = int(a * alpha_strength)
-            pixels[x, y] = (r, g, b, max(0, min(255, next_alpha)))
+            darkness = min(r, g, b)
+            chroma = brightness - darkness
+            index = y * width + x
+            is_dark_color = brightness <= threshold and chroma >= chroma_floor
+            if brightness <= threshold and not is_dark_color:
+                pixels[x, y] = (0, 0, 0, 0)
+                continue
+            if is_dark_color:
+                dark_color_candidates[index] = 1
+
+            alpha_ratio = brightness / 255
+            if feather > 0 and brightness < threshold + feather:
+                edge_t = (brightness - threshold) / max(1, feather)
+                edge_t = max(0.0, min(1.0, edge_t))
+                alpha_ratio *= edge_t * edge_t * (3.0 - 2.0 * edge_t)
+            next_alpha = max(0, min(255, int(255 * alpha_ratio * alpha_strength)))
+            if next_alpha <= 0:
+                pixels[x, y] = (0, 0, 0, 0)
+                continue
+
+            unpremultiply = 255 / max(1, brightness)
+            next_rgb = (
+                max(0, min(255, int(r * unpremultiply))),
+                max(0, min(255, int(g * unpremultiply))),
+                max(0, min(255, int(b * unpremultiply))),
+            )
+            pixels[x, y] = (*next_rgb, min(a, next_alpha))
+            alpha_values[index] = next_alpha
+            if not is_dark_color:
+                bright_alpha_values[index] = next_alpha
+
+    background = _transparent_background_mask(alpha_values, width, height)
+    bright_background = _transparent_background_mask(bright_alpha_values, width, height)
+    for y in range(height):
+        for x in range(width):
+            index = y * width + x
+            if dark_color_candidates[index] and not _near_background(bright_background, width, height, x, y, 6):
+                r, g, b, a = source_pixels[x, y]
+                pixels[x, y] = (r, g, b, a)
+            elif alpha_values[index] == 0 and not background[index]:
+                r, g, b, a = source_pixels[x, y]
+                pixels[x, y] = (r, g, b, a)
     return image
+
+
+def _near_background(background: bytearray, width: int, height: int, x: int, y: int, radius: int) -> bool:
+    x1 = max(0, x - radius)
+    y1 = max(0, y - radius)
+    x2 = min(width - 1, x + radius)
+    y2 = min(height - 1, y + radius)
+    for yy in range(y1, y2 + 1):
+        row = yy * width
+        for xx in range(x1, x2 + 1):
+            if background[row + xx]:
+                return True
+    return False
+
+
+def _transparent_background_mask(alpha_values: bytearray, width: int, height: int) -> bytearray:
+    background = bytearray(width * height)
+    stack: list[int] = []
+
+    def push(index: int) -> None:
+        if alpha_values[index] == 0 and not background[index]:
+            background[index] = 1
+            stack.append(index)
+
+    for x in range(width):
+        push(x)
+        push((height - 1) * width + x)
+    for y in range(height):
+        push(y * width)
+        push(y * width + width - 1)
+
+    while stack:
+        index = stack.pop()
+        x = index % width
+        y = index // width
+        if x > 0:
+            push(index - 1)
+        if x + 1 < width:
+            push(index + 1)
+        if y > 0:
+            push(index - width)
+        if y + 1 < height:
+            push(index + width)
+    return background
 
 
 def find_union_alpha_bbox(frames: Iterable[Image.Image]) -> Tuple[int, int, int, int]:
